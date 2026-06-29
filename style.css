@@ -471,17 +471,37 @@ body {
     100% { background-position: -200% 0; }
 }
 
-/* Quality Badge */
-.quality-badge {
+/* Avatar Number Badge */
+.avatar-number {
     position: absolute;
     top: 14px;
     left: 14px;
     padding: 4px 10px;
     border-radius: 100px;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--gradient-main);
+    font-family: var(--font-main);
+    font-weight: 700;
+    font-size: 11px;
+    color: #fff;
+    letter-spacing: 0.02em;
+    z-index: 4;
+    box-shadow: 0 2px 8px rgba(167, 139, 250, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Quality Badge */
+.quality-badge {
+    position: absolute;
+    top: 14px;
+    left: 60px;
+    padding: 4px 10px;
+    border-radius: 100px;
+    background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     font-family: var(--font-main);
     font-weight: 600;
     font-size: 11px;
@@ -836,11 +856,18 @@ body {
         right: 5px;
     }
 
-    .quality-badge {
+    .avatar-number {
         font-size: 9px;
         padding: 3px 7px;
         top: 8px;
         left: 8px;
+    }
+
+    .quality-badge {
+        font-size: 9px;
+        padding: 3px 7px;
+        top: 8px;
+        left: 44px;
     }
 }
 
