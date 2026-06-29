@@ -96,6 +96,88 @@ const uploadAddBtn = document.getElementById("uploadAddBtn");
 let currentIndex = 0;
 let pendingFiles = []; // files staged for upload
 
+// ===== IndexedDB Storage for Uploaded Images =====
+const DB_NAME = "AvatarGalleryDB";
+const DB_VERSION = 1;
+const STORE_NAME = "uploadedImages";
+
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+                db.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+            }
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onerror = (e) => reject(e.target.error);
+    });
+}
+
+function saveImageToDB(imageData) {
+    return openDB().then(db => {
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, "readwrite");
+            const store = tx.objectStore(STORE_NAME);
+            const request = store.add(imageData);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (e) => reject(e.target.error);
+        });
+    });
+}
+
+function getAllImagesFromDB() {
+    return openDB().then(db => {
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, "readonly");
+            const store = tx.objectStore(STORE_NAME);
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (e) => reject(e.target.error);
+        });
+    });
+}
+
+function deleteImageFromDB(id) {
+    return openDB().then(db => {
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, "readwrite");
+            const store = tx.objectStore(STORE_NAME);
+            const request = store.delete(id);
+            request.onsuccess = () => resolve();
+            request.onerror = (e) => reject(e.target.error);
+        });
+    });
+}
+
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = (e) => reject(e);
+        reader.readAsDataURL(file);
+    });
+}
+
+async function loadSavedImages() {
+    try {
+        const savedImages = await getAllImagesFromDB();
+        savedImages.forEach(saved => {
+            images.push({
+                src: saved.dataUrl,
+                name: saved.name,
+                size: saved.size,
+                source: "Uploaded",
+                isBlob: false,
+                dbId: saved.id
+            });
+        });
+    } catch (err) {
+        console.warn("Could not load saved images:", err);
+    }
+}
+
 // ===== Background Particles =====
 function createParticles() {
     const container = document.getElementById("particles");
@@ -144,6 +226,7 @@ function renderGallery() {
 
         const isHD = img.source === "Gemini";
         const isUploaded = img.source === "Uploaded";
+        const canDelete = isUploaded && img.dbId;
 
         card.innerHTML = `
             <div class="card-image-wrapper">
@@ -162,6 +245,7 @@ function renderGallery() {
                     ${isHD ? "ULTRA HD" : "HD"}
                 </div>
                 ${isUploaded ? '<div class="uploaded-badge">Uploaded</div>' : ''}
+                ${canDelete ? `<button class="card-delete-btn" data-dbid="${img.dbId}" data-index="${index}" title="Remove from gallery"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>` : ''}
                 <div class="card-view-icon">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
@@ -201,6 +285,7 @@ function renderGallery() {
         // Click card to open lightbox
         card.addEventListener("click", (e) => {
             if (e.target.closest(".card-download-btn")) return;
+            if (e.target.closest(".card-delete-btn")) return;
             openLightbox(index);
         });
 
@@ -210,6 +295,17 @@ function renderGallery() {
             e.stopPropagation();
             downloadImage(index);
         });
+
+        // Delete button on uploaded card
+        const deleteBtn = card.querySelector(".card-delete-btn");
+        if (deleteBtn) {
+            deleteBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const dbId = Number(deleteBtn.getAttribute("data-dbid"));
+                const idx = Number(deleteBtn.getAttribute("data-index"));
+                deleteUploadedImage(dbId, idx);
+            });
+        }
 
         galleryGrid.appendChild(card);
     });
@@ -383,32 +479,62 @@ function clearPendingFiles() {
     renderUploadPreviews();
 }
 
-function addUploadedToGallery() {
+async function addUploadedToGallery() {
     if (pendingFiles.length === 0) return;
 
     let addedCount = 0;
+    showToast("Saving images... please wait");
 
-    pendingFiles.forEach((file) => {
-        const url = URL.createObjectURL(file);
-        const ext = file.name.split(".").pop().toUpperCase();
+    for (const file of pendingFiles) {
+        try {
+            const dataUrl = await fileToBase64(file);
+            const name = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
+            const size = formatFileSize(file.size);
 
-        images.push({
-            src: url,
-            name: file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " "),
-            size: formatFileSize(file.size),
-            source: "Uploaded",
-            isBlob: true
-        });
+            // Save to IndexedDB
+            const dbId = await saveImageToDB({
+                dataUrl: dataUrl,
+                name: name,
+                size: size,
+                fileName: file.name,
+                timestamp: Date.now()
+            });
 
-        addedCount++;
-    });
+            // Add to gallery array
+            images.push({
+                src: dataUrl,
+                name: name,
+                size: size,
+                source: "Uploaded",
+                isBlob: false,
+                dbId: dbId
+            });
+
+            addedCount++;
+        } catch (err) {
+            console.error("Failed to save image:", file.name, err);
+            showToast(`Failed to save "${file.name}" — file may be too large`);
+        }
+    }
 
     pendingFiles = [];
     uploadPreviewArea.innerHTML = "";
     uploadActions.classList.remove("visible");
     closeUploadModal();
     renderGallery();
-    showToast(`${addedCount} image${addedCount > 1 ? "s" : ""} added to gallery!`);
+    showToast(`${addedCount} image${addedCount > 1 ? "s" : ""} saved to gallery permanently!`);
+}
+
+async function deleteUploadedImage(dbId, index) {
+    try {
+        await deleteImageFromDB(dbId);
+        images.splice(index, 1);
+        renderGallery();
+        showToast("Image removed from gallery");
+    } catch (err) {
+        console.error("Failed to delete image:", err);
+        showToast("Failed to remove image");
+    }
 }
 
 // ===== Event Listeners =====
@@ -495,7 +621,8 @@ lightbox.addEventListener("touchend", (e) => {
 }, { passive: true });
 
 // ===== Initialize =====
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     createParticles();
+    await loadSavedImages();
     renderGallery();
 });

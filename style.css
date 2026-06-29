@@ -1239,6 +1239,43 @@ body {
     text-transform: uppercase;
 }
 
+/* Delete button on uploaded cards */
+.card-delete-btn {
+    position: absolute;
+    top: 40px;
+    right: 14px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+    opacity: 0;
+    transition: all var(--transition-fast);
+}
+
+.gallery-card:hover .card-delete-btn {
+    opacity: 1;
+}
+
+.card-delete-btn:hover {
+    background: rgba(239, 68, 68, 0.8);
+    border-color: rgba(239, 68, 68, 0.5);
+    color: #fff;
+    transform: scale(1.15);
+}
+
+.card-delete-btn:active {
+    transform: scale(0.95);
+}
+
 /* Mobile adjustments for upload */
 @media (max-width: 768px) {
     .btn-upload {
